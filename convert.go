@@ -114,6 +114,12 @@ type modelConfig struct {
 	PriceFactor    float64 `json:"price_factor,omitempty"`
 	MaxInputTokens int     `json:"max_input_tokens,omitempty"`
 	URL            string  `json:"url,omitempty"`
+	// Thinking fields come from the upstream catalog's thinking_config. They are
+	// per model: e.g. Qwen3.8-Max exposes low/medium/xhigh (no "high"), Kimi and
+	// GLM expose low/high/max, and some models also allow turning thinking off.
+	Efforts             []string `json:"efforts,omitempty"`
+	DefaultEffort       string   `json:"default_effort,omitempty"`
+	SupportsThinkingOff bool     `json:"supports_thinking_off,omitempty"`
 
 	ContextConfig map[string]struct {
 		TokenCount int `json:"token_count"`

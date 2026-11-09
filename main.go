@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -210,6 +211,53 @@ type catalogEntry struct {
 	ContextConfig map[string]struct {
 		TokenCount int `json:"token_count"`
 	} `json:"context_config"`
+
+	ThinkingConfig *struct {
+		Disabled json.RawMessage `json:"disabled"`
+		Enabled  *struct {
+			IsDefault bool `json:"is_default"`
+			Efforts   map[string]struct {
+				IsDefault bool `json:"is_default"`
+			} `json:"efforts"`
+		} `json:"enabled"`
+	} `json:"thinking_config"`
+}
+
+// thinkingEffortOrder is the display order the official catalog uses. Unknown
+// effort names sort after the known ones so a new upstream level still shows up.
+var thinkingEffortOrder = map[string]int{"none": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5}
+
+func sortedThinkingEfforts(efforts map[string]struct {
+	IsDefault bool `json:"is_default"`
+}) (ordered []string, def string) {
+	for name, meta := range efforts {
+		ordered = append(ordered, name)
+		if meta.IsDefault {
+			def = name
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		ri, iok := thinkingEffortOrder[ordered[i]]
+		rj, jok := thinkingEffortOrder[ordered[j]]
+		if !iok {
+			ri = 100
+		}
+		if !jok {
+			rj = 100
+		}
+		if ri != rj {
+			return ri < rj
+		}
+		return ordered[i] < ordered[j]
+	})
+	return ordered, def
+}
+
+// thinkingOff reports whether the catalog allows disabling thinking entirely.
+// A present "disabled" object enables it; an explicit null (or absence) does not.
+func thinkingOffPresent(disabled json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(disabled)
+	return len(trimmed) > 0 && string(trimmed) != "null"
 }
 
 // catalogGroupEntry pairs a parsed entry with the group it came from so
@@ -320,6 +368,12 @@ func parseCatalogEntry(entry json.RawMessage) (*modelConfig, error) {
 		if tier.TokenCount > mc.MaxInputTokens {
 			mc.MaxInputTokens = tier.TokenCount
 		}
+	}
+	if tc := e.ThinkingConfig; tc != nil {
+		if tc.Enabled != nil && len(tc.Enabled.Efforts) > 0 {
+			mc.Efforts, mc.DefaultEffort = sortedThinkingEfforts(tc.Enabled.Efforts)
+		}
+		mc.SupportsThinkingOff = thinkingOffPresent(tc.Disabled)
 	}
 	return mc, nil
 }
