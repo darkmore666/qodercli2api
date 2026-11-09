@@ -1,0 +1,93 @@
+# Codex CLI 配置：接入 qodercli2api 本地反代（OpenAI Responses 接口）
+#
+# 安装（推荐：独立 CODEX_HOME，不干扰现有 ~/.codex）：
+#   mkdir -p ~/.codex-qoder
+#   cp codex-config-qoder.toml ~/.codex-qoder/config.toml
+#   生成模型目录（需服务端已启动；模型列表变化后重跑即可）：
+#   qcodex --qoder-refresh-models
+#   默认排除 预发/演练/DogFooding/测试 以及 采供线专属/线上化基础 通道（33 个模型）；
+#   要全量加 --keep-unstable，想额外排除用 --exclude '<正则>'。
+#   然后：qcodex
+#
+# 前置条件：服务端已启动
+#   ./bin/qodercli2api -region global -addr 127.0.0.1:8377 -sk <密钥>
+#   （未设 -sk 时日志显示 api key auth=disabled，此时 Q2A_API_KEY 填任意非空值）
+#
+# 切换模型：qcodex -c model="GLM-5.3"（slug 见 models.json，等价于 GET /v1/models 的 id）
+# 模型目录可用 tools/gen_codex_models.py 从代理重新生成，切换后上下文窗口自动跟随。
+
+# ---- 模型（全局默认：Qwen3.8-Max）----
+model = "qmodel_38max"
+model_provider = "qoder"
+
+# 上下文窗口不在这里设置，改由下面的模型目录按模型给出（Qwen3.8-Max = 800000）。
+# 原因：Codex 的 model_context_window 是全局值，一旦写死，切到 180k 的小模型时
+# Codex 仍以为有 800k，会撑爆上游；而按 slug 提供的窗口能逐模型生效。
+model_catalog_json = "/Users/symantec/.codex-qoder/models.json"
+
+# 思考强度不在这里固定：每个模型支持的档位不同（Qwen3.8-Max 是 none/low/medium/
+# xhigh，DeepSeek-V4-Pro 是 none/high/max，GLM-5.3 是 low/high/max），默认档位由
+# models.json 里每个模型的 default_reasoning_level 决定。
+# 需要临时指定：qcodex -c model_reasoning_effort=xhigh（必须是该模型支持的档位）。
+# 展示模型提供的推理摘要（代理把上游 thinking 转成 Codex 的 summary）。
+model_reasoning_summary = "detailed"
+hide_agent_reasoning = false
+# 主要影响自然语言输出详细程度。
+model_verbosity = "medium"
+personality = "pragmatic"
+
+check_for_update_on_startup = false
+suppress_unstable_features_warning = true
+service_tier = "default"
+
+# 反代不实现托管 web search（非 function/custom 工具会被丢弃），关掉以免模型误判能联网。
+[tools]
+web_search = false
+
+# 可选：Codex Desktop 的回合结束通知（路径取自 ~/.codex/config.toml，未装该 App 时删掉）。
+# notify = ["/Users/symantec/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
+
+# ---- 供应商：qodercli2api ----
+[model_providers.qoder]
+name = "qodercli2api"
+base_url = "http://127.0.0.1:8377/v1"
+# Codex 0.166 起只支持 responses；写成 chat 会直接报错。
+wire_api = "responses"
+env_key = "Q2A_API_KEY"
+env_key_instructions = "export Q2A_API_KEY='与服务端 QODER2API_SK 相同的值'"
+# 本地反代不使用 ChatGPT 登录态，必须显式关闭，否则 Codex 会要求 codex login。
+requires_openai_auth = false
+supports_websockets = false
+# 上游是 SSE 长连接，默认空闲超时偏短，放宽到 5 分钟。
+stream_idle_timeout_ms = 300000
+request_max_retries = 2
+stream_max_retries = 2
+
+# ---- TUI（取自 ~/.codex/config.toml）----
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "project-name", "run-state", "context-used", "used-tokens", "task-progress", "context-window-size", "total-input-tokens", "total-output-tokens"]
+status_line_use_colors = true
+screen_reader_detection_done = true
+fullscreen_transcript = false
+
+# ---- 代理环境变量（取自 ~/.codex/config.toml，只作用于 Codex 启动的子进程）----
+# 本机反代必须留在 NO_PROXY 里，否则 127.0.0.1:8377 会被 http 代理接管。
+[shell_environment_policy.set]
+HTTP_PROXY = "http://127.0.0.1:7890"
+HTTPS_PROXY = "http://127.0.0.1:7890"
+ALL_PROXY = "http://127.0.0.1:7890"
+NO_PROXY = "localhost,127.0.0.1,::1"
+
+# ---- 项目信任（可选）----
+# 只信任具体项目目录。不要写 "/" 或家目录：那等于把所有目录都标成已信任，
+# 之后在任何目录启动都不再提示确认。要么按需添加具体路径，要么整段删掉，
+# 让 Codex 每次进新目录时正常询问。
+#
+# [projects."/Users/symantec/my_code/qodercli2api"]
+# trust_level = "trusted"
+
+# ---- 可选：按需从 ~/.codex/config.toml 复制以下段落 ----
+# [features]            hooks / plugins / memories 开关
+# [mcp_servers.*]       openaiDeveloperDocs、tldraw、node_repl
+# [marketplaces.*]      openai-bundled / openai-primary-runtime
+# [plugins.*]           browser / documents / pdf / spreadsheets / presentations
