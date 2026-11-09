@@ -621,7 +621,11 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 		writeOAIError(w, 400, "invalid_request_error", "", err.Error())
 		return
 	}
-	s.logf("req %s resp model=%s->%s stream=%v bytes=%d msgs=%d tools=%d", requestID[:8], req.Model, mc.Key, req.Stream, len(raw), len(upMsgs), len(req.Tools))
+	effort := ""
+	if req.Reasoning != nil {
+		effort = fmt.Sprintf(" effort=%q", req.Reasoning.Effort)
+	}
+	s.logf("req %s resp model=%s->%s stream=%v bytes=%d msgs=%d tools=%d%s", requestID[:8], req.Model, mc.Key, req.Stream, len(raw), len(upMsgs), len(req.Tools), effort)
 	resp, err := s.callUpstream(r.Context(), body, mc, requestID[:8])
 	if err != nil {
 		s.logUpstreamError(requestID[:8], err)

@@ -123,7 +123,9 @@ func upstreamChunks(ctx context.Context, body io.Reader) (<-chan *upChunk, <-cha
 				}
 				json.Unmarshal([]byte(env.Body), &ebody)
 				if ebody.Message == "" {
-					ebody.Message = fmt.Sprintf("upstream error status %d", env.StatusCodeValue)
+					// 上游的错误 envelope 常常只带状态码，真正原因在 body 里；
+					// 不带出来就只能看到 "upstream error status 400"。
+					ebody.Message = fmt.Sprintf("upstream error status %d: %s", env.StatusCodeValue, truncate(string(env.Body), 400))
 				}
 				errc <- fmt.Errorf("%s", ebody.Message)
 				return false

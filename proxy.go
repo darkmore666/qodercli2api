@@ -396,6 +396,9 @@ func (s *server) callUpstream(ctx context.Context, body []byte, mc *modelConfig,
 			}
 			continue
 		}
+		// 非重试型失败（如 400 超长上下文）以前只回一句 "upstream error status 400"，
+		// 把上游给的真实原因吞掉了，排障时看不到限额。
+		s.logf("req %s upstream status %d: %s", rid, resp.StatusCode, truncate(string(raw), 500))
 		return errorResponse(resp, raw), nil
 	}
 	return nil, fmt.Errorf("unreachable")
@@ -687,7 +690,7 @@ func (s *server) streamAnthropic(w http.ResponseWriter, body io.Reader, areq *an
 			json.Unmarshal([]byte(env.Body), &ebody)
 			msg := ebody.Message
 			if msg == "" {
-				msg = fmt.Sprintf("upstream error status %d", env.StatusCodeValue)
+				msg = fmt.Sprintf("upstream error status %d: %s", env.StatusCodeValue, truncate(string(env.Body), 400))
 			}
 			st.emit("error", map[string]any{
 				"type":  "error",
@@ -896,6 +899,12 @@ func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
 		OwnedBy     string `json:"owned_by"`
 		Type        string `json:"type"`
 		MaxTokens   int    `json:"max_tokens"`
+		// Per-model thinking levels from the upstream catalog. Different models
+		// really do expose different sets (Qwen3.8-Max has no "high", DeepSeek-V4-
+		// Pro has no "medium"), so clients that render an effort picker need them.
+		ThinkingEfforts     []string `json:"thinking_efforts,omitempty"`
+		DefaultEffort       string   `json:"default_effort,omitempty"`
+		SupportsThinkingOff bool     `json:"thinking_off_supported,omitempty"`
 	}
 	list := make([]modelListItem, 0, len(s.models.byKey))
 	for _, mc := range s.models.byKey {
@@ -909,15 +918,18 @@ func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
 			name = mc.Key
 		}
 		list = append(list, modelListItem{
-			ID:          s.models.publicID(mc),
-			Name:        name,
-			DisplayName: name,
-			QoderKey:    mc.Key,
-			Object:      "model",
-			Created:     0,
-			OwnedBy:     "qoder",
-			Type:        "model",
-			MaxTokens:   mc.MaxInputTokens,
+			ID:                  s.models.publicID(mc),
+			Name:                name,
+			DisplayName:         name,
+			QoderKey:            mc.Key,
+			Object:              "model",
+			Created:             0,
+			OwnedBy:             "qoder",
+			Type:                "model",
+			MaxTokens:           mc.MaxInputTokens,
+			ThinkingEfforts:     mc.Efforts,
+			DefaultEffort:       mc.DefaultEffort,
+			SupportsThinkingOff: mc.SupportsThinkingOff,
 		})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
