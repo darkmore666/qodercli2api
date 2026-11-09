@@ -21,6 +21,9 @@
 # Reverse-engineering workspace is local-only
 /re/
 
+# 本地配置目录（含脚本/密钥等，不得入库）
+/.config/
+
 # Only reviewed public protocol and analysis documents are tracked
 /docs/*
 !/docs/oauth.md
